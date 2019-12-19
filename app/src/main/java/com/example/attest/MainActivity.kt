@@ -13,7 +13,7 @@ class MainActivity : AppCompatActivity() {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_main)
         et.callback = object : AtEditText.AtCallback() {
-            override fun onInputAtCallback(cursor: AtEditText.Cursor) {
+            override fun onInputAtCallback() {
                 UserActivity.start(this@MainActivity)
             }
         }
@@ -23,8 +23,11 @@ class MainActivity : AppCompatActivity() {
         super.onActivityResult(requestCode, resultCode, data)
         if (requestCode == 0) {
             if (resultCode == Activity.RESULT_OK) {
-                val user = data?.getParcelableExtra<AtEditText.AtBean>("user")
-                Log.e("xys", "onActivityResult:${user}")
+                data?.getParcelableExtra<AtEditText.AtBean>("user")?.apply {
+                    Log.e("xys", "onActivityResult:$this")
+                    et.backSpace()
+                    et.appendAt(this)
+                }
             }
         }
     }

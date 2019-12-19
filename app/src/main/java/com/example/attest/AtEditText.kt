@@ -27,24 +27,21 @@ class AtEditText : AppCompatEditText {
     private val content = LinkedList<Triple<Int, Int, Int>>()
     private var change: String = ""
     var callback: Callback? = null
+    /**
+     * 标志位，满足[Callback.aimsArray]触发
+     */
     private var trigger: Boolean = false
     private val watcher: AtTextWatcher = object : AtTextWatcher {
         override fun beforeTextChanged(s: CharSequence?, start: Int, count: Int, after: Int) {
             callback?.beforeTextChanged(s, start, count, after)
         }
 
-        /**
-         * s: 改变后的字符串
-         * start: 有变动的字符串的序号
-         * before: 被改变的字符串长度，如果是新增则为0。
-         * count: 添加的字符串长度，如果是删除则为0。
-         */
         override fun onTextChanged(s: CharSequence?, start: Int, before: Int, count: Int) {
             cursor?.apply {
                 // 没有多选
                 change = s.toString().substring(start, start + count)
-                Log.e("xys", "~~~~~~afterTextChanged change -> $change")
-                if (change in callback?.aimsArray ?: arrayOf()) {
+                Log.e("xys", "~~~~~~ change -> $change")
+                if (change in callback?.aimsArray ?: AIMS_EMPTY_ARRAY) {
                     trigger = true
                 }
             }
@@ -52,9 +49,16 @@ class AtEditText : AppCompatEditText {
         }
 
         override fun afterTextChanged(s: Editable?) {
-            Log.d("xys", "afterTextChanged")
             callback?.afterTextChanged(s)
+            if (trigger) {
+                callback?.onInputCustomCallback(change)
+            }
+            trigger = false
         }
+    }
+
+    companion object {
+        private val AIMS_EMPTY_ARRAY: Array<String> = arrayOf()
     }
 
     constructor(context: Context?) : this(context, null)
@@ -76,32 +80,37 @@ class AtEditText : AppCompatEditText {
         }
     }
 
-    fun appendAt(atBean: AtBean) {
-        cursor?.apply {
-            if (!cursor.isSelected) {
-                // 没选文字
-                append(
-                    atBean.atStringWithoutAt,
-                    cursor.selStart,
-                    cursor.selStart + atBean.atString.length
-                )
-            } else {
-                // 选择了文字
-            }
-        }
-    }
-
     override fun onSelectionChanged(selStart: Int, selEnd: Int) {
         super.onSelectionChanged(selStart, selEnd)
+        Log.d("xys", "onSelectionChanged")
         cursor?.apply {
             this.selStart = selStart
             this.selEnd = selEnd
             this.text = this@AtEditText.text?.toString() ?: ""
-            if (trigger) {
-                // 在这里回调是为了将更新后的cursor带入参数
-                callback?.onInputCustomCallback(clone(), change)
-                trigger = false
-            }
+        }
+    }
+
+    fun appendAt(atBean: AtBean) {
+        Log.d("xys", "appendAt ${cursor?.text}")
+        cursor?.apply {
+            //            if (!isSelected) {
+            // 没选文字
+            editableText.insert(selStart, atBean.atString)
+//            } else {
+//                // 选择了文字
+//            }
+        }
+    }
+
+    /**
+     * 回退
+     */
+    fun backSpace(length: Int = 1) {
+        if (length < 0) {
+            throw  RuntimeException("length must be >= 0")
+        }
+        cursor?.apply {
+            editableText.delete(Math.max(0, selStart - length), selStart)
         }
     }
 
@@ -115,7 +124,7 @@ class AtEditText : AppCompatEditText {
         /**
          * 用户输入自定义回调
          */
-        abstract fun onInputCustomCallback(cursor: Cursor, aimsString: String?)
+        abstract fun onInputCustomCallback(aimsString: String?)
 
         /**
          * 直接暴露给外界[TextWatcher.beforeTextChanged]的回调
@@ -134,14 +143,14 @@ class AtEditText : AppCompatEditText {
     }
 
     abstract class AtCallback : Callback(arrayOf("@")) {
-        override fun onInputCustomCallback(cursor: Cursor, aimsString: String?) {
-            onInputAtCallback(cursor)
+        override fun onInputCustomCallback(aimsString: String?) {
+            onInputAtCallback()
         }
 
         /**
          * 用户输入@回调
          */
-        abstract fun onInputAtCallback(cursor: Cursor)
+        abstract fun onInputAtCallback()
     }
 
     /**
@@ -207,7 +216,7 @@ class AtEditText : AppCompatEditText {
      * AT的人
      */
     data class AtBean(
-        val name: String,
+        val name: CharSequence,
         val id: String
     ) : Parcelable {
         /**
@@ -231,7 +240,7 @@ class AtEditText : AppCompatEditText {
         )
 
         override fun writeToParcel(parcel: Parcel, flags: Int) {
-            parcel.writeString(name)
+            parcel.writeString(name.toString())
             parcel.writeString(id)
         }
 
