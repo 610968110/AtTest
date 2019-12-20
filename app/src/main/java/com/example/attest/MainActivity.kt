@@ -4,6 +4,7 @@ import android.app.Activity
 import android.content.Intent
 import android.os.Bundle
 import android.util.Log
+import android.view.View
 import androidx.appcompat.app.AppCompatActivity
 import kotlinx.android.synthetic.main.activity_main.*
 
@@ -15,6 +16,10 @@ class MainActivity : AppCompatActivity() {
         et.callback = object : AtEditText.AtCallback() {
             override fun onInputAtCallback() {
                 UserActivity.start(this@MainActivity)
+            }
+
+            override fun appendSameAllow(atBean: AtEditText.AtBean): Boolean {
+                return true
             }
         }
     }
@@ -30,5 +35,12 @@ class MainActivity : AppCompatActivity() {
                 }
             }
         }
+    }
+
+    fun seeList(view: View) {
+        et.atList.forEach {
+            Log.w("xys", "${it.content}  ${it.startPos}  ${it.endPos}")
+        }
+        Log.w("xys", "````````````````````````````")
     }
 }
