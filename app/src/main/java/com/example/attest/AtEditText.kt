@@ -105,10 +105,6 @@ class AtEditText : AppCompatEditText {
             // 并写入view
             editableText.insert(selStart, atBean.atString)
         }
-        content.forEach {
-            Log.w("xys", "${it.content}: ${it.startPos}  ->  ${it.endPos}}")
-        }
-        Log.w("xys", "-----------------------------------")
     }
 
     /**
@@ -123,8 +119,21 @@ class AtEditText : AppCompatEditText {
         }
     }
 
+    private fun getCursorInContentBean(): ContentBean? {
+        cursor?.apply {
+            content.forEach { bean ->
+                if (selStart in (bean.startPos + 1)..bean.endPos) {
+                    return bean
+                }
+            }
+        }
+        return null
+    }
+
+
     override fun onDetachedFromWindow() {
         removeTextChangedListener(watcher)
+        cursorHandler.removeCallbacksAndMessages(null)
         super.onDetachedFromWindow()
     }
 
@@ -296,19 +305,12 @@ class AtEditText : AppCompatEditText {
         }
 
         override fun handleMessage(msg: Message) {
-            super.handleMessage(msg)
             when (msg.what) {
                 CURSOR_CHANGE -> {
                     // 不允许光标出现在@好友中间
-                    catch.get()?.also {
-                        it.cursor?.apply {
-                            it.content.forEach { bean ->
-                                if (selStart in bean.startPos..bean.endPos) {
-                                    it.setSelection(bean.endPos + 1)
-                                    Log.e("xys", "CURSOR_CHANGE selEnd:${bean.endPos}")
-                                    return@forEach
-                                }
-                            }
+                    catch.get()?.apply {
+                        getCursorInContentBean()?.apply {
+                            setSelection(endPos + 1)
                         }
                     }
                 }
@@ -317,7 +319,7 @@ class AtEditText : AppCompatEditText {
             }
         }
 
-        fun cursorChange(delayed: Long = 500) {
+        fun cursorChange(delayed: Long = 300) {
             removeMessages(CURSOR_CHANGE)
             sendMessageDelayed(Message.obtain(this, CURSOR_CHANGE), delayed)
         }
