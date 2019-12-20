@@ -4,6 +4,8 @@
 package com.example.attest
 
 import android.content.Context
+import android.os.Handler
+import android.os.Message
 import android.os.Parcel
 import android.os.Parcelable
 import android.text.Editable
@@ -12,6 +14,7 @@ import android.util.AttributeSet
 import android.util.Log
 import androidx.appcompat.R
 import androidx.appcompat.widget.AppCompatEditText
+import java.lang.ref.WeakReference
 import java.util.*
 
 /**
@@ -24,7 +27,7 @@ import java.util.*
 class AtEditText : AppCompatEditText {
 
     private val cursor: Cursor? = Cursor()
-    private val content = LinkedList<Triple<Int, Int, Int>>()
+    private val content = LinkedList<ContentBean>()
     private var change: String = ""
     var callback: Callback? = null
     /**
@@ -40,7 +43,6 @@ class AtEditText : AppCompatEditText {
             cursor?.apply {
                 // 没有多选
                 change = s.toString().substring(start, start + count)
-                Log.e("xys", "~~~~~~ change -> $change")
                 if (change in callback?.aimsArray ?: AIMS_EMPTY_ARRAY) {
                     trigger = true
                 }
@@ -56,6 +58,7 @@ class AtEditText : AppCompatEditText {
             trigger = false
         }
     }
+    private val cursorHandler: CursorHandler = CursorHandler(this)
 
     companion object {
         private val AIMS_EMPTY_ARRAY: Array<String> = arrayOf()
@@ -87,19 +90,25 @@ class AtEditText : AppCompatEditText {
             this.selStart = selStart
             this.selEnd = selEnd
             this.text = this@AtEditText.text?.toString() ?: ""
+            cursorHandler.cursorChange()
         }
     }
 
     fun appendAt(atBean: AtBean) {
-        Log.d("xys", "appendAt ${cursor?.text}")
         cursor?.apply {
-            //            if (!isSelected) {
-            // 没选文字
+            // 如果在已存在@前插入新@，那么后面的@对应pos都要向后移动atString的长度
+            content.filter { it.startPos >= selStart }.forEach {
+                it.startPos += atBean.atString.length
+            }
+            // 添加新的@信息到内存
+            content.add(AtContent(cursor.selStart, atBean))
+            // 并写入view
             editableText.insert(selStart, atBean.atString)
-//            } else {
-//                // 选择了文字
-//            }
         }
+        content.forEach {
+            Log.w("xys", "${it.content}: ${it.startPos}  ->  ${it.endPos}}")
+        }
+        Log.w("xys", "-----------------------------------")
     }
 
     /**
@@ -110,7 +119,7 @@ class AtEditText : AppCompatEditText {
             throw  RuntimeException("length must be >= 0")
         }
         cursor?.apply {
-            editableText.delete(Math.max(0, selStart - length), selStart)
+            editableText.delete(0.coerceAtLeast(selStart - length), selStart)
         }
     }
 
@@ -197,11 +206,6 @@ class AtEditText : AppCompatEditText {
                     text.substring(selEnd, text.length)
                 }
             }
-        val isEnd: Boolean
-            get() = endText.isEmpty()
-
-        val isStart: Boolean
-            get() = beforeText.isEmpty()
 
         public override fun clone(): Cursor {
             val c = super.clone() as Cursor
@@ -215,10 +219,7 @@ class AtEditText : AppCompatEditText {
     /**
      * AT的人
      */
-    data class AtBean(
-        val name: CharSequence,
-        val id: String
-    ) : Parcelable {
+    data class AtBean(val name: CharSequence, val id: String) : Parcelable {
         /**
          * "@"后的字符串
          */
@@ -260,5 +261,65 @@ class AtEditText : AppCompatEditText {
     }
 
     private interface AtTextWatcher : TextWatcher
-}
 
+    private abstract class ContentBean(var startPos: Int) {
+        open var content: String? = null
+
+        open val endPos: Int = 0
+    }
+
+    private class AtContent(start: Int, val atBean: AtBean) : ContentBean(start) {
+        override var content: String? = ""
+            get() = atBean.atString
+            set(value) {
+                field = value
+            }
+        override val endPos: Int
+            get() = startPos.plus(atBean.atString.length) - 1
+    }
+
+    private class NormalContent(start: Int, val text: String) : ContentBean(start) {
+        override var content: String? = null
+            get() = text
+            set(value) {
+                field = value
+            }
+        override val endPos: Int
+            get() = startPos.plus(text.length)
+    }
+
+    private class CursorHandler(atEditText: AtEditText) : Handler() {
+        private val catch = WeakReference<AtEditText>(atEditText)
+
+        companion object {
+            private const val CURSOR_CHANGE = 0x010
+        }
+
+        override fun handleMessage(msg: Message) {
+            super.handleMessage(msg)
+            when (msg.what) {
+                CURSOR_CHANGE -> {
+                    // 不允许光标出现在@好友中间
+                    catch.get()?.also {
+                        it.cursor?.apply {
+                            it.content.forEach { bean ->
+                                if (selStart in bean.startPos..bean.endPos) {
+                                    it.setSelection(bean.endPos + 1)
+                                    Log.e("xys", "CURSOR_CHANGE selEnd:${bean.endPos}")
+                                    return@forEach
+                                }
+                            }
+                        }
+                    }
+                }
+                else -> {
+                }
+            }
+        }
+
+        fun cursorChange(delayed: Long = 500) {
+            removeMessages(CURSOR_CHANGE)
+            sendMessageDelayed(Message.obtain(this, CURSOR_CHANGE), delayed)
+        }
+    }
+}
